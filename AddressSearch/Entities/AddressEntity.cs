@@ -15,3 +15,28 @@ namespace AddressSearch.Entities
         public string State { get; set; }
     }
 }
+1:
+
+public class CommandDispatcher<TCommand>
+{
+    private readonly Dictionary<Type, ICommandHandler<TCommand>> _handlers = new Dictionary<Type, ICommandHandler<TCommand>>();
+
+    public void RegisterHandler<T>(ICommandHandler<T> handler) where T : TCommand
+    {
+        _handlers.Add(typeof(T), (ICommandHandler<TCommand>)handler);
+    }
+
+    public void Dispatch(TCommand command)
+    {
+        var type = command.GetType();
+        if (_handlers.ContainsKey(type))
+        {
+            var handler = _handlers[type];
+            handler.Handle(command);
+        }
+        else
+        {
+            throw new InvalidOperationException($"No handler registered for {type.Name}");
+        }
+    }
+}
