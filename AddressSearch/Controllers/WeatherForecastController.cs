@@ -1,39 +1,80 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
-
-namespace AddressSearch.Controllers
+public class Worker : BackgroundService
 {
-    [ApiController]
-    [Route("[controller]")]
-    public class WeatherForecastController : ControllerBase
+    private bool processMessagePump = true;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        private static readonly string[] Summaries = new[]
-        {
-            "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-        };
+        // Create a new thread for the message pump
+        Thread t = new Thread(new ThreadStart(messagePump));
+        t.Start();
 
-        private readonly ILogger<WeatherForecastController> _logger;
+        // Wait for the worker thread to exit
+        await t.JoinAsync();
 
-        public WeatherForecastController(ILogger<WeatherForecastController> logger)
-        {
-            _logger = logger;
-        }
+        // Close the queue and disconnect from the queue manager
+        queue.Close();
+        qMgr.Disconnect();
+    }
 
-        [HttpGet]
-        public IEnumerable<WeatherForecast> Get()
+    private void messagePump()
+    {
+        // Create a connection factory object
+        MQConnectionFactory cf = new MQConnectionFactory();
+
+        // Set the properties of the connection factory object
+        cf.HostName = "localhost";
+        cf.Port = 1414;
+        cf.Channel = "SYSTEM.DEF.SVRCONN";
+        cf.QueueManager = "QMGR";
+
+        // Create a connection object
+        MQConnection conn = (MQConnection)cf.CreateConnection();
+
+        // Create a session object
+        MQSession sess = (MQSession)conn.CreateSession(false, AcknowledgeMode.AutoAcknowledge);
+
+        // Create a destination object
+        MQDestination dest = (MQDestination)sess.CreateQueue("QUEUE");
+
+        // Create a consumer object
+        MQConsumer consumer = (MQConsumer)sess.CreateConsumer(dest);
+
+        // Loop forever, blocking on the call to Receive or until a timeout occurs
+        while (processMessagePump)
         {
-            var rng = new Random();
-            return Enumerable.Range(1, 5).Select(index => new WeatherForecast
+            try
             {
-                Date = DateTime.Now.AddDays(index),
-                TemperatureC = rng.Next(-20, 55),
-                Summary = Summaries[rng.Next(Summaries.Length)]
-            })
-            .ToArray();
+                // Receive the next message from the queue
+                MQMessage msg = (MQMessage)consumer.Receive(5000);
+
+                // Process the message here
+
+                // Reset the message object for reuse
+                msg.ClearMessage();
+            }
+            catch (MQException mqe)
+            {
+                if (mqe.ReasonCode == MQC.MQRC_NO_MSG_AVAILABLE)
+                {
+                    // No messages available - continue looping
+                    continue;
+                }
+                else
+                {
+                    // Some other error occurred - stop looping
+                    processMessagePump = false;
+                    break;
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+            }
         }
+
+        // Close the consumer, session and connection objects
+        consumer.Close();
+        sess.Close();
+        conn.Close();
     }
 }
