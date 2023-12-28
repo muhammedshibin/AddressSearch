@@ -1,15 +1,18 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-
-namespace AddressSearch.Entities
+public static DataTable ConvertToDataTable<T>(List<T> list)
 {
-    public class SearchAddress
+    DataTable dt = new DataTable();
+    foreach (var prop in typeof(T).GetProperties())
     {
-        public string Address { get; set; }
-        public string City { get; set; }
-        public string State { get; set; }
-        public int frequency { get; set; }
+        dt.Columns.Add(prop.Name, Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType);
     }
+    foreach (var item in list)
+    {
+        DataRow dr = dt.NewRow();
+        foreach (var prop in typeof(T).GetProperties())
+        {
+            dr[prop.Name] = prop.GetValue(item) ?? DBNull.Value;
+        }
+        dt.Rows.Add(dr);
+    }
+    return dt;
 }
